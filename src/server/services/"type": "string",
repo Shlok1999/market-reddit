@@ -1,0 +1,130 @@
+"type": "string",
+          "description": "Help text to explain the purpose or usage of this setting."
+        },
+        "validationEndpoint": {
+          "$ref": "#/$defs/InternalEndpoint",
+          "description": "Optional endpoint for server-side validation of this setting value."
+        },
+        "placeholder": {
+          "type": "string",
+          "description": "Placeholder text to show in the input field."
+        },
+        "defaultValue": {
+          "type": "string",
+          "description": "Default value for this setting."
+        },
+        "isSecret": {
+          "type": "boolean",
+          "description": "Whether this setting contains secret/sensitive information."
+        }
+      },
+      "if": {
+        "required": ["isSecret"],
+        "properties": { "isSecret": { "const": true } }
+      },
+      "then": { "not": { "required": ["defaultValue"] } }
+    },
+    "GlobalSetting": {
+      "oneOf": [
+        { "$ref": "#/$defs/GlobalStringSetting" },
+        { "$ref": "#/$defs/ParagraphSetting" },
+        { "$ref": "#/$defs/NumberSetting" },
+        { "$ref": "#/$defs/BooleanSetting" },
+        { "$ref": "#/$defs/SelectSetting" },
+        { "$ref": "#/$defs/MultiSelectSetting" }
+      ]
+    },
+    "SubredditSetting": {
+      "oneOf": [
+        { "$ref": "#/$defs/StringSetting" },
+        { "$ref": "#/$defs/ParagraphSetting" },
+        { "$ref": "#/$defs/NumberSetting" },
+        { "$ref": "#/$defs/BooleanSetting" },
+        { "$ref": "#/$defs/SelectSetting" },
+        { "$ref": "#/$defs/MultiSelectSetting" }
+      ]
+    }
+  },
+  "required": ["name"],
+  "anyOf": [{ "required": ["post"] }, { "required": ["server"] }, { "required": ["blocks"] }],
+  "dependentRequired": { "triggers": ["server"] },
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "The app configuration schema URI.",
+      "default": "https://developers.reddit.com/schema/config-file.v1.json"
+    },
+    "name": {
+      "type": "string",
+      "description": "App account name and Community URL slug.",
+      "minLength": 3,
+      "maxLength": 16,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "media": {
+      "type": "object",
+      "description": "Static asset config. All assets are available to the app client and server via the asset plugin. No overlap with the media plugin or permission.",
+      "additionalProperties": false,
+      "properties": {
+        "dir": {
+          "$ref": "#/$defs/Path",
+          "description": "Public assets path relative project root. All files within are uploaded to Reddit.",
+          "default": "assets"
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "description": "What an app is allowed to do.",
+      "additionalProperties": false,
+      "properties": {
+        "http": {
+          "type": "object",
+          "description": "HTTP plugin config (`fetch()`).",
+          "additionalProperties": false,
+          "properties": {
+            "enable": {
+              "type": "boolean",
+              "description": "Enables the HTTP plugin.",
+              "default": true
+            },
+            "domains": {
+              "type": "array",
+              "description": "Domains the app may communicate with. `/api/` is implied and `\"reddit.com\"` or subdomains should not be included.",
+              "items": {
+                "type": "string",
+                "description": "Allowed domain.",
+                "examples": ["example.com", "wikipedia.org", "query.wikidata.org"]
+              },
+              "uniqueItems": true,
+              "default": []
+            }
+          }
+        },
+        "media": {
+          "type": "boolean",
+          "description": "Enables the media plugin (uploads).",
+          "default": false
+        },
+        "payments": {
+          "type": "boolean",
+          "description": "Enables the payments plugin.",
+          "default": false
+        },
+        "realtime": {
+          "type": "boolean",
+          "description": "Enables the realtime plugin (client and server messaging).",
+          "default": false
+        },
+        "redis": {
+          "type": "boolean",
+          "description": "Enables the Redis plugin (storage).",
+          "default": false
+        },
+        "reddit": {
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Reddit API plugin config.",
+              "additionalProperties": false,
