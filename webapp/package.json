@@ -6,8 +6,8 @@
         "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
         "server:dev": "tsx watch src/server/index.ts",
         "client:dev": "vite",
-        "build": "vite build",
-        "start": "node dist/server/index.js"
+        "build": "vite build && tsc -p tsconfig.server.json",
+        "start": "NODE_ENV=production node dist/server/index.js"
     },
     "dependencies": {
         "cheerio": "^1.0.0",

@@ -5,14 +5,13 @@ import { RedditService } from '../services/reddit.js';
 
 export const apiRouter = Router();
 
-if (!process.env.GEMINI_API_KEY) {
-  console.warn('⚠️ GEMINI_API_KEY is missing from environment variables');
-}
-
 const scraper = new ScraperService();
 const reddit = new RedditService();
 
 apiRouter.post('/analyze', async (req, res) => {
+  if (!process.env.GEMINI_API_KEY) {
+    console.warn('⚠️ GEMINI_API_KEY is missing from environment variables');
+  }
   const ai = new AIService(process.env.GEMINI_API_KEY || '');
   try {
     const { companyName, description, websiteUrl } = req.body as {
