@@ -4,9 +4,12 @@ import { createServer } from 'http';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
+import { config } from 'dotenv';
 import { apiRouter } from './routes/api.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: join(__dirname, '../../.env') }); // Load from root of webapp
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 const isProd = process.env.NODE_ENV === 'production';
