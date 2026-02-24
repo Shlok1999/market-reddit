@@ -1,5 +1,4 @@
 import express from 'express';
-import pool from './services/conn/db.js';
 import cors from 'cors';
 import { createServer } from 'http';
 import { join, dirname } from 'path';
