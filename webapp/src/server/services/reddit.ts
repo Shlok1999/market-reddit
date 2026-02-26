@@ -27,17 +27,25 @@ export class RedditService {
   async searchSubreddits(queries: string[]): Promise<RedditSubreddit[]> {
     const found = new Map<string, RedditSubreddit>();
 
-    for (const query of queries.slice(0, 5)) {
+    const promises = queries.slice(0, 5).map(async (query) => {
       try {
         const url = `https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(query)}&sort=relevance&limit=8&include_over_18=false`;
         const res = await fetch(url, { headers: REDDIT_HEADERS, signal: AbortSignal.timeout(8000) });
 
-        if (!res.ok) continue;
+        if (!res.ok) return;
         const data = await res.json() as { data: { children: { data: { display_name: string; subscribers: number; public_description: string; url: string } }[] } };
 
         for (const item of data?.data?.children ?? []) {
           const sub = item.data;
-          if (sub.subscribers > 500 && !found.has(sub.display_name)) {
+          // Filter out explicitly massive default subs that have nothing to do with niches
+          const isExactOrBoundaryMatch = queries.some(q => {
+            const noSpaceQ = q.replace(/\s+/g, '').toLowerCase();
+            const subName = sub.display_name.toLowerCase();
+            const desc = (sub.public_description || '').toLowerCase();
+            return subName.includes(noSpaceQ) || desc.includes(q.toLowerCase());
+          });
+
+          if (sub.subscribers > 500 && sub.subscribers < 500000 && !found.has(sub.display_name) && isExactOrBoundaryMatch) {
             found.set(sub.display_name, {
               name: sub.display_name,
               displayName: `r/${sub.display_name}`,
@@ -50,7 +58,9 @@ export class RedditService {
       } catch (e) {
         console.warn(`Subreddit search failed for "${query}":`, (e as Error).message);
       }
-    }
+    });
+
+    await Promise.all(promises);
 
     return Array.from(found.values()).sort((a, b) => b.subscribers - a.subscribers).slice(0, 15);
   }
@@ -84,16 +94,23 @@ export class RedditService {
     const allPosts: RedditPost[] = [];
     const lowerKeywords = keywords.map(k => k.toLowerCase());
 
-    for (const sub of subreddits.slice(0, 8)) {
+    const promises = subreddits.slice(0, 8).map(async (sub) => {
       const posts = await this.getHotPosts(sub);
       for (const post of posts) {
         const text = (post.title + ' ' + (post.selftext || '')).toLowerCase();
-        const relevant = lowerKeywords.length === 0 || lowerKeywords.some(k => text.includes(k));
-        if (relevant || post.score > 100) {
+        const relevant = lowerKeywords.length === 0 || lowerKeywords.some(k => {
+          // crude word boundary check to prevent "art" matching "started"
+          const regex = new RegExp(`\\b${k.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'i');
+          return regex.test(text);
+        });
+        
+        if (relevant) {
           allPosts.push(post);
         }
       }
-    }
+    });
+
+    await Promise.all(promises);
 
     return allPosts.sort((a, b) => b.score - a.score).slice(0, 25);
   }

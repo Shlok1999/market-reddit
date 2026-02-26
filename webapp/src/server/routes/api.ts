@@ -12,7 +12,7 @@ apiRouter.post('/analyze', async (req, res) => {
   if (!process.env.GEMINI_API_KEY) {
     console.warn('⚠️ GEMINI_API_KEY is missing from environment variables');
   }
-  const ai = new AIService(process.env.GEMINI_API_KEY || '');
+  // const ai = new AIService(process.env.GEMINI_API_KEY || '');
   try {
     const { companyName, description, websiteUrl } = req.body as {
       companyName: string;
@@ -29,8 +29,26 @@ apiRouter.post('/analyze', async (req, res) => {
     // 1. Scrape website
     const { text: siteContent, keywords: descKeywords } = await scraper.scrape(websiteUrl || '', description);
 
+    console.log('\n=== SCRAPING RESULT ===');
+    console.log('Site Content Preview:', siteContent.substring(0, 1000) + (siteContent.length > 1000 ? '...' : ''));
+    console.log('Keywords:', descKeywords);
+    console.log('=======================\n');
+
+    return res.json({
+      success: true,
+      data: {
+        summary: `Scraping only. Analyzed ${companyName}.`,
+        keywords: descKeywords,
+        relevantSubreddits: [],
+        subredditDetails: [],
+        relevantPosts: [],
+        websiteScraped: !!(siteContent && siteContent !== description),
+      }
+    });
+
+    /* --- TEMPORARILY DISABLED ---
     // 2. Ask Gemini for subreddits + keywords
-    const { subreddits: aiSubreddits, keywords: aiKeywords } = await ai.analyze(
+    const { subreddits: aiSubreddits = [], keywords: aiKeywords = [] } = await ai.analyze(
       companyName, description, websiteUrl || '', siteContent
     );
     console.log(`🤖 Gemini suggested: ${aiSubreddits.join(', ')}`);
@@ -78,8 +96,10 @@ apiRouter.post('/analyze', async (req, res) => {
         subredditDetails: subredditsFound,
         relevantPosts: allPosts,
         websiteScraped: !!(siteContent && siteContent !== description),
+        usageStats: ai.getUsageStats(),
       }
     });
+    ------------------------------ */
 
   } catch (err) {
     console.error('Analysis error:', err);

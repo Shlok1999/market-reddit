@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { config } from 'dotenv';
 import { apiRouter } from './routes/api.js';
+import { streamRouter } from './routes/streamAnalyze.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: join(__dirname, '../../.env') }); // Load from root of webapp
@@ -17,7 +18,7 @@ const isProd = process.env.NODE_ENV === 'production';
 app.use(cors());
 app.use(express.json());
 
-app.use('/api', apiRouter);
+app.use('/api', streamRouter);
 
 // Serve Vite-built frontend in production
 if (isProd) {

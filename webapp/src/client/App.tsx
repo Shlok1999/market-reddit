@@ -7,6 +7,14 @@ interface Post {
     selftext?: string;
     suggestedReplies?: string[];
 }
+interface UsageStats {
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalTokens: number;
+    costUsd: number;
+    modelUsed: string;
+}
+
 interface Result {
     summary: string;
     keywords: string[];
@@ -14,6 +22,7 @@ interface Result {
     subredditDetails: Subreddit[];
     relevantPosts: Post[];
     websiteScraped: boolean;
+    usageStats?: UsageStats;
 }
 
 const STEPS = ['🔍 Scraping website', '🤖 Asking Gemini', '📡 Searching subreddits', '📝 Fetching posts', '💬 Writing reply suggestions'];
@@ -79,39 +88,129 @@ export default function App() {
         setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+
+    const handleSubmit = async (e?: React.FormEvent, continueFromScrape: boolean = false) => {
+        if (e) e.preventDefault();
         setLoading(true);
         setError(null);
-        setResult(null);
-        setStep(0);
-
-        const stepInterval = setInterval(() => {
-            setStep(s => Math.min(s + 1, STEPS.length - 1));
-        }, 3500);
+        if (!continueFromScrape) {
+            setResult({
+                summary: '',
+                keywords: [],
+                relevantSubreddits: [],
+                subredditDetails: [],
+                relevantPosts: [],
+                websiteScraped: false
+            });
+            setStep(0);
+            setAwaitingConfirmation(false);
+        } else {
+            setStep(2);
+            setAwaitingConfirmation(false);
+        }
 
         try {
-            const res = await fetch('/api/analyze', {
+            const endpoint = continueFromScrape ? '/api/stream-analyze-continue' : '/api/stream-analyze-scrape';
+            const payload = continueFromScrape ? { ...form, keywords: result?.keywords || [] } : form;
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(form),
+                body: JSON.stringify(payload),
             });
-            const data = await res.json();
-            if (data.success) {
-                setResult(data.data);
-            } else {
-                setError(data.error || 'Something went wrong');
+
+            if (!res.body) throw new Error("No stream");
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (!line.startsWith('data:')) continue;
+
+                    const json = line.replace(/^data:\s*/, '');
+                    if (!json) continue;
+
+                    const event = JSON.parse(json);
+                    handleStreamEvent(event, continueFromScrape);
+                }
             }
-        } catch {
-            setError('Failed to connect to server.');
+
+        } catch (err) {
+            console.error(err);
+            setError("Streaming failed");
         } finally {
-            clearInterval(stepInterval);
             setLoading(false);
-            setStep(-1);
+            if (!continueFromScrape && !error) {
+                setAwaitingConfirmation(true);
+            } else {
+                setStep(-1);
+            }
         }
     };
 
+    function handleStreamEvent(event: any, isContinuing: boolean) {
+
+        setResult(prev => {
+            if (!prev) return prev;
+
+            switch (event.type) {
+
+                case 'summary':
+                    if (!isContinuing) setStep(1);
+                    setForm(f => ({ ...f, description: event.data })); // Populate description with scraped content
+                    return { ...prev, summary: event.data };
+
+                case 'keywords':
+                    return { ...prev, keywords: event.data };
+
+                case 'subreddits':
+                    if (isContinuing) setStep(2);
+                    return { ...prev, relevantSubreddits: event.data };
+
+                case 'subreddit_details':
+                    return { ...prev, subredditDetails: event.data };
+
+                case 'posts':
+                    if (isContinuing) setStep(3);
+                    return { ...prev, relevantPosts: event.data };
+
+                case 'reply':
+                    if (isContinuing) setStep(4);
+                    return {
+                        ...prev,
+                        relevantPosts: prev.relevantPosts.map(p =>
+                            p.id === event.postId
+                                ? { ...p, suggestedReplies: event.replies }
+                                : p
+                        )
+                    };
+
+                case 'usage':
+                    return { ...prev, usageStats: event.data };
+
+                case 'done':
+                    return prev;
+
+                default:
+                    return prev;
+            }
+        });
+    }
+
     const subredditMap = new Map((result?.subredditDetails ?? []).map(s => [s.name, s]));
+
+    console.log("Render State ->", { hasResult: !!result, awaitingConfirmation, step, loading, error });
 
     return (
         <div className="app">
@@ -123,28 +222,41 @@ export default function App() {
 
             <div className="form-wrap">
                 <div className="card">
-                    <form onSubmit={handleSubmit}>
+                    <form onSubmit={(e) => handleSubmit(e, false)}>
                         <div className="field">
                             <label htmlFor="companyName">Company Name</label>
                             <input id="companyName" name="companyName" type="text" required
-                                placeholder="e.g. Playbase" value={form.companyName} onChange={handleChange} />
+                                placeholder="e.g. Playbase" value={form.companyName} onChange={handleChange} disabled={awaitingConfirmation} />
                         </div>
                         <div className="field">
                             <label htmlFor="websiteUrl">Website URL <span style={{ opacity: 0.5, fontWeight: 400 }}>(optional)</span></label>
                             <input id="websiteUrl" name="websiteUrl" type="url"
-                                placeholder="https://playbase.cloud" value={form.websiteUrl} onChange={handleChange} />
+                                placeholder="https://playbase.cloud" value={form.websiteUrl} onChange={handleChange} disabled={awaitingConfirmation} />
                         </div>
-                        <div className="field">
-                            <label htmlFor="description">Product Description</label>
-                            <textarea id="description" name="description" required rows={4}
-                                placeholder="Describe what your product does and who it's for..."
-                                value={form.description} onChange={handleChange} />
-                        </div>
-                        <button type="submit" disabled={loading} className="btn">
-                            {loading ? (
-                                <span className="btn-loading"><span className="spinner" /> Analyzing...</span>
-                            ) : 'Analyze & Generate Reply Suggestions →'}
-                        </button>
+                        {!awaitingConfirmation ? (
+                            <button type="submit" disabled={loading} className="btn">
+                                {loading ? (
+                                    <span className="btn-loading"><span className="spinner" /> Scraping...</span>
+                                ) : 'Scrape Website →'}
+                            </button>
+                        ) : (
+                            <>
+                                <div className="field" style={{ marginTop: '15px' }}>
+                                    <label htmlFor="description">Product Description <span style={{ color: 'orange' }}>(Populated from website)</span></label>
+                                    <textarea id="description" name="description" rows={12}
+                                        placeholder="Describe what your product does and who it's for..."
+                                        value={form.description} onChange={handleChange} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                                    <button type="button" onClick={() => handleSubmit(undefined, true)} disabled={loading} className="btn" style={{ flex: 1, background: 'var(--primary)' }}>
+                                        {loading ? <span className="btn-loading"><span className="spinner" /> Analyzing...</span> : 'Confirm & Find Subreddits →'}
+                                    </button>
+                                    <button type="button" onClick={() => { setAwaitingConfirmation(false); setStep(-1); setResult(null); setForm(f => ({ ...f, description: '' })); }} disabled={loading} className="btn" style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </form>
 
                     {loading && (
@@ -161,7 +273,20 @@ export default function App() {
                 </div>
             </div>
 
-            {result && (
+            {result && awaitingConfirmation && !loading && (
+                <div className="results">
+                    <div className="summary-card">
+                        <h2>Scraping Complete</h2>
+                        <p>Please review the populated description above. You can edit it if needed.</p>
+                        <div className="chips" style={{ marginTop: '15px' }}>
+                            <div style={{ fontSize: '12px', marginBottom: '8px', color: 'var(--text-muted)' }}>Extracted Keywords:</div>
+                            {result.keywords.slice(0, 15).map(k => <span key={k} className="chip">{k}</span>)}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {result && !awaitingConfirmation && !loading && (
                 <div className="results">
                     <div className="summary-card">
                         <h2>Analysis Complete</h2>
@@ -172,6 +297,19 @@ export default function App() {
                         <div className="chips">
                             {result.keywords.slice(0, 10).map(k => <span key={k} className="chip">{k}</span>)}
                         </div>
+                        {result.usageStats && (
+                            <div className="usage-stats" style={{ marginTop: '1.25rem', padding: '1rem', background: 'var(--form-bg, rgba(128, 128, 128, 0.05))', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '0.9rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                                    <span style={{ fontWeight: 600 }}>⚙️ AI Token Usage ({result.usageStats.modelUsed})</span>
+                                    <span style={{ fontWeight: 600, color: 'var(--primary, #0066cc)' }}>${result.usageStats.costUsd.toFixed(5)}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.7, fontSize: '0.8rem' }}>
+                                    <span>{result.usageStats.totalInputTokens.toLocaleString()} input</span>
+                                    <span>{result.usageStats.totalOutputTokens.toLocaleString()} output</span>
+                                    <span>{result.usageStats.totalTokens.toLocaleString()} total tokens</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="grid">
@@ -225,6 +363,14 @@ export default function App() {
                     </div>
                 </div>
             )}
+
+            <pre style={{ margin: '20px', padding: '10px', background: '#f5f5f5', color: '#111', fontSize: '11px', borderRadius: '4px', overflowX: 'auto' }}>
+                DEBUG STATE: {JSON.stringify({ hasResult: !!result, awaitingConfirmation, step, loading, error }, null, 2)}
+                {'\n'}
+                hasSubreddits: {result?.relevantSubreddits?.length || 0}
+                {'\n'}
+                hasPosts: {result?.relevantPosts?.length || 0}
+            </pre>
         </div>
     );
 }
