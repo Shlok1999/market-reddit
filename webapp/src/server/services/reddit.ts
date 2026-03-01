@@ -27,9 +27,9 @@ export class RedditService {
   async searchSubreddits(queries: string[]): Promise<RedditSubreddit[]> {
     const found = new Map<string, RedditSubreddit>();
 
-    const promises = queries.slice(0, 5).map(async (query) => {
+    const promises = queries.slice(0, 10).map(async (query) => {
       try {
-        const url = `https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(query)}&sort=relevance&limit=8&include_over_18=false`;
+        const url = `https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(query)}&sort=relevance&limit=25&include_over_18=false`;
         const res = await fetch(url, { headers: REDDIT_HEADERS, signal: AbortSignal.timeout(8000) });
 
         if (!res.ok) return;
@@ -37,15 +37,28 @@ export class RedditService {
 
         for (const item of data?.data?.children ?? []) {
           const sub = item.data;
-          // Filter out explicitly massive default subs that have nothing to do with niches
-          const isExactOrBoundaryMatch = queries.some(q => {
-            const noSpaceQ = q.replace(/\s+/g, '').toLowerCase();
+          // Trust Reddit's built-in search relevance, but require at least some keyword overlap
+          // to prevent completely random default subreddits from slipping through.
+          const isFuzzyMatch = queries.some(q => {
+            const qLower = q.toLowerCase();
+            const noSpaceQ = qLower.replace(/\s+/g, '');
             const subName = sub.display_name.toLowerCase();
             const desc = (sub.public_description || '').toLowerCase();
-            return subName.includes(noSpaceQ) || desc.includes(q.toLowerCase());
+            
+            // 1. Name match
+            if (subName.includes(noSpaceQ) || subName.includes(qLower)) return true;
+            
+            // 2. Exact description match
+            if (desc.includes(qLower)) return true;
+            
+            // 3. Any significant word match in name or description
+            const words = qLower.split(/\s+/).filter(w => w.length > 3);
+            if (words.length > 0 && words.some(w => subName.includes(w) || desc.includes(w))) return true;
+
+            return false;
           });
 
-          if (sub.subscribers > 500 && sub.subscribers < 500000 && !found.has(sub.display_name) && isExactOrBoundaryMatch) {
+          if (sub.subscribers > 500 && sub.subscribers < 800000 && !found.has(sub.display_name) && isFuzzyMatch) {
             found.set(sub.display_name, {
               name: sub.display_name,
               displayName: `r/${sub.display_name}`,

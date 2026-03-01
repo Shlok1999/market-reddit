@@ -100,7 +100,7 @@ streamRouter.post("/stream-analyze-continue", async (req, res) => {
     // ---------- FIND SUBREDDITS
     send({ type: "stage", step: "analyzing" });
     const allQueries = [
-      ...new Set([...descKeywords.slice(0, 5)])
+      ...new Set([...descKeywords.slice(0, 10)])
     ];
 
     const subredditsFound = await reddit.searchSubreddits(allQueries);
