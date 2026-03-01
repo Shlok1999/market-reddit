@@ -106,9 +106,8 @@ export class AIService {
       const prompt = `
   You are an expert product marketer. I have scraped a company's website. 
   
-  TASK 1: Read the following website content and write a comprehensive, detailed 2-paragraph product description.
-  The first paragraph should clearly state what the product is, its core features, and its primary value proposition.
-  The second paragraph should identify the ideal target audience (e.g., founders, SMBs), their common pain points, and how this product specifically solves those problems.
+  TASK 1: Read the following website content and write a concise, punchy 2-3 sentence product description.
+  It should clearly state what the product is and who it is for. Total length under 400 characters.
   
   TASK 2: Based on your generated summary and the content, extract 10-15 highly relevant SEO and marketing keywords that best represent this product's core value offering.
   
